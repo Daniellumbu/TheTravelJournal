@@ -1,6 +1,7 @@
 package com.daniellumbu.thetraveljournal.ui.screen
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -35,11 +36,16 @@ class DetailsScreen : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Obtain ViewModel instance
         val markerViewModel: MarkerViewModel by viewModels()
 
+        // Get marker ID from the intent
+        val markerId = intent?.getIntExtra("MARKER_ID", -1) ?: -1
+        if (markerId != -1) {
+            markerViewModel.loadMarker(markerId) // Load the marker data from the ViewModel
+        }
+
         setContent {
-            DetailsScreenContent(markerViewModel = markerViewModel)
+            DetailsScreenContent(markerViewModel = markerViewModel, markerId)
         }
     }
 }
@@ -47,10 +53,16 @@ class DetailsScreen : ComponentActivity() {
 @OptIn(ExperimentalPagerApi::class)
 @Composable
 fun DetailsScreenContent(
-    markerViewModel: MarkerViewModel // Pass the ViewModel as a parameter
+    markerViewModel: MarkerViewModel, // Pass the ViewModel as a parameter
+    markerId: Int
 ) {
+    LaunchedEffect(markerId) {
+        markerViewModel.loadMarker(markerId)
+    }
+
     // Observe the selected marker from the ViewModel
     val selectedMarker by markerViewModel.selectedMarker.collectAsState()
+
 
     // State to manage photos and actions
     var photos by remember { mutableStateOf(listOf<Uri>()) }
@@ -63,11 +75,11 @@ fun DetailsScreenContent(
         onResult = { uri ->
             uri?.let { newUri ->
                 val updatedMarker = selectedMarker?.copy(
-                    imageUrls = selectedMarker!!.imageUrls + newUri.toString()
+                    imageUrls = selectedMarker!!.imageUrls + newUri.toString() // Add new image URL
                 )
                 updatedMarker?.let {
                     markerViewModel.updateMarker(it) // Save updated marker through ViewModel
-                    photos = updatedMarker.imageUrls.map { Uri.parse(it) }
+                    photos = updatedMarker.imageUrls.map { Uri.parse(it) } // Update photos state
                 }
             }
         }
@@ -75,7 +87,7 @@ fun DetailsScreenContent(
 
     // Load the photos when selected marker changes
     LaunchedEffect(selectedMarker) {
-        photos = selectedMarker?.imageUrls?.map { Uri.parse(it) } ?: emptyList()
+        photos = selectedMarker?.imageUrls?.map { Uri.parse(it) } ?: emptyList() // Map image URLs to URIs
     }
 
     if (showFullScreen) {
@@ -91,6 +103,7 @@ fun DetailsScreenContent(
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
+            Log.d("DetailsScreen", "Selected Marker: $selectedMarker")
             Text(
                 text = selectedMarker?.title ?: "Loading...",
                 fontSize = 24.sp,
@@ -104,13 +117,18 @@ fun DetailsScreenContent(
                 textAlign = TextAlign.Justify,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
+
+            // Button to add photo
             Button(
                 onClick = { pickImageLauncher.launch("image/*") },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(text = "Add Photo")
             }
+
             Spacer(modifier = Modifier.height(16.dp))
+
+            // LazyColumn to display photos
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {

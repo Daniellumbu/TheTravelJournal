@@ -80,9 +80,14 @@ fun TodoAppNavHost(
         }
 
         // Summary Screen
-        composable(MainNavigation.DetailsScreenContent.route) {
-            val markerViewModel: MarkerViewModel = hiltViewModel() // or pass it explicitly
-            DetailsScreenContent(markerViewModel = markerViewModel)
+        composable(MainNavigation.DetailsScreenContent.route) { backStackEntry ->
+            val markerId = backStackEntry.arguments?.getString("markerId")?.toIntOrNull() ?: -1
+
+            if (markerId != -1) {
+                val markerViewModel: MarkerViewModel = hiltViewModel() // Get the ViewModel
+                // Pass the markerId and ViewModel to DetailsScreenContent
+                DetailsScreenContent(markerViewModel = markerViewModel, markerId = markerId)
+            }
         }
     }
 }

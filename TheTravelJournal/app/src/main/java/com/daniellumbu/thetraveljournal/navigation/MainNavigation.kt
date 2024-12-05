@@ -8,7 +8,8 @@ sealed class MainNavigation(val route: String) {
 
     object TodoListScreen: MainNavigation("TodoList_screen")
 
-    object DetailsScreenContent : MainNavigation( "DetailScreenContent"
-        )
+    object DetailsScreenContent : MainNavigation("DetailScreenContent/{markerId}") {
+        fun createRoute(markerId: Int) = "DetailScreenContent/$markerId"
+    }
 
 }

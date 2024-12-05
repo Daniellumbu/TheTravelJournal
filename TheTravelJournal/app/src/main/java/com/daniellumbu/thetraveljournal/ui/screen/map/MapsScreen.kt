@@ -165,36 +165,18 @@ fun setupMarkersWithCustomInfoWindow(
     googleMap: GoogleMap,
     mapViewModel: MapViewModel,
     navController: NavController,
-    markerViewModel:MarkerViewModel
+    markerViewModel: MarkerViewModel
 ) {
     // Initialize the database
     val markerDatabase = MarkerDatabase.getDatabase(context)
 
-    // Set custom info window adapter
-    googleMap.setInfoWindowAdapter(CustomInfoWindowAdapter(context))
-
-    // Function to save marker to the database
-    fun saveMarkerToDatabase(markerOptions: MarkerOptions, imageUrls: List<String>): MarkerEntity {
-        val markerEntity = MarkerEntity(
-            latitude = markerOptions.position.latitude,
-            longitude = markerOptions.position.longitude,
-            title = markerOptions.title ?: "No Title",
-            snippet = markerOptions.snippet ?: "No Snippet",
-            imageUrls = imageUrls // Save image URLs
-        )
-        CoroutineScope(Dispatchers.IO).launch {
-            markerDatabase.markerDao().insertMarker(markerEntity)
-        }
-        return markerEntity // Return the entity for immediate use
-    }
-
-    // Function to load markers from the database
+    // Load saved markers from the database
     fun loadMarkersFromDatabase() {
         CoroutineScope(Dispatchers.IO).launch {
             val savedMarkers = markerDatabase.markerDao().getAllMarkers()
             Log.d("YourTag", "Saved Markers: $savedMarkers")
             if (savedMarkers.isEmpty()) {
-                Log.e("Money", "No markers found in the database.")
+                Log.e("MarkerError", "No markers found in the database.")
             }
             withContext(Dispatchers.Main) {
                 for (markerEntity in savedMarkers) {
@@ -205,47 +187,21 @@ fun setupMarkersWithCustomInfoWindow(
                     val marker = googleMap.addMarker(markerOptions)
 
                     // Attach imageUrls to the marker's tag for later use
-                    marker?.tag = markerEntity.imageUrls
+                    marker?.tag = markerEntity
                 }
             }
         }
     }
 
-    // Load saved markers from the database
+    // Load markers initially
     loadMarkersFromDatabase()
-
-    // Add default marker and save it to the database
-    val defaultMarkerOptions = MarkerOptions()
-        .position(LatLng(47.0, 19.0))
-        .title("Marker AIT")
-        .snippet("Marker with an image")
-    val defaultImageUrls = listOf(
-        "android.resource://${context.packageName}/drawable/clothes",
-        "android.resource://${context.packageName}/drawable/clothes"
-    ) // Example image URLs
-    val defaultMarker = googleMap.addMarker(defaultMarkerOptions)
-    defaultMarker?.tag = defaultImageUrls // Set the tag immediately
-    saveMarkerToDatabase(defaultMarkerOptions, defaultImageUrls)
-
-    // Add markers from ViewModel and save them to the database
-    mapViewModel.getMarkersList().forEach { position ->
-        val dynamicMarkerOptions = MarkerOptions()
-            .position(position)
-            .title("Dynamic Marker")
-            .snippet("Dynamic marker info")
-        val dynamicImageUrls =
-            listOf("android.resource://${context.packageName}/drawable/clothes") // Example image URL
-        val dynamicMarker = googleMap.addMarker(dynamicMarkerOptions)
-        dynamicMarker?.tag = dynamicImageUrls // Set the tag immediately
-        saveMarkerToDatabase(dynamicMarkerOptions, dynamicImageUrls)
-    }
 
     googleMap.setOnMarkerClickListener { marker ->
         marker.showInfoWindow()
 
         // Safely cast the tag to the expected type
-        val markerData = marker.tag as? List<String>
-        if (markerData == null) {
+        val markerEntity = marker.tag as? MarkerEntity
+        if (markerEntity == null) {
             Log.e("MarkerError", "Marker tag is null or not of the expected type.")
             return@setOnMarkerClickListener true
         }
@@ -254,14 +210,14 @@ fun setupMarkersWithCustomInfoWindow(
         val bottomSheetView = LayoutInflater.from(context).inflate(R.layout.marker_bottom_sheet, null)
         bottomSheetDialog.setContentView(bottomSheetView)
 
-        // Assuming the tag is a list of image URLs
-        bottomSheetView.findViewById<TextView>(R.id.marker_title).text = marker.title
-        bottomSheetView.findViewById<TextView>(R.id.marker_snippet).text = marker.snippet
+        // Populate bottom sheet views with marker details
+        bottomSheetView.findViewById<TextView>(R.id.marker_title).text = markerEntity.title
+        bottomSheetView.findViewById<TextView>(R.id.marker_snippet).text = markerEntity.snippet
 
         val imageView = bottomSheetView.findViewById<ImageView>(R.id.marker_image)
-        if (markerData.isNotEmpty()) {
+        if (markerEntity.imageUrls.isNotEmpty()) {
             Glide.with(context)
-                .load(markerData[0])
+                .load(markerEntity.imageUrls[0])
                 .placeholder(R.drawable.img)
                 .error(R.drawable.bracket)
                 .into(imageView)
@@ -269,8 +225,13 @@ fun setupMarkersWithCustomInfoWindow(
             imageView.setImageResource(R.drawable.bracket)
         }
 
+        // Set the "Details" button logic
         bottomSheetView.findViewById<Button>(R.id.marker_details_button).setOnClickListener {
-            navController.navigate(MainNavigation.DetailsScreenContent.route)
+            // Update the selected marker in ViewModel
+            markerViewModel.selectMarker(markerEntity)
+
+            // Navigate to the details screen, passing the marker ID
+            navController.navigate("DetailScreenContent/${markerEntity.id}")
             bottomSheetDialog.dismiss()
         }
 
@@ -281,7 +242,6 @@ fun setupMarkersWithCustomInfoWindow(
         bottomSheetDialog.show()
         true
     }
-
 }
 
 

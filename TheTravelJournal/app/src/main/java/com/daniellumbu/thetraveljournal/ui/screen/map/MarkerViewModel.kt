@@ -1,5 +1,6 @@
 package com.daniellumbu.thetraveljournal.ui.screen.map
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.daniellumbu.thetraveljournal.data.MarkerDAO
@@ -18,6 +19,17 @@ class MarkerViewModel @Inject constructor(
     private val _selectedMarker = MutableStateFlow<MarkerEntity?>(null)
     val selectedMarker: StateFlow<MarkerEntity?> = _selectedMarker
 
+    fun loadMarker(markerId: Int) {
+        viewModelScope.launch {
+            try {
+                val marker = markerDao.getMarkerById(markerId)
+                _selectedMarker.value = marker
+            } catch (e: Exception) {
+                Log.e("MarkerViewModel", "Error loading marker", e)
+            }
+        }
+    }
+
     fun selectMarker(marker: MarkerEntity) {
         _selectedMarker.value = marker
     }
@@ -35,7 +47,7 @@ class MarkerViewModel @Inject constructor(
     fun updateMarker(marker: MarkerEntity) {
         viewModelScope.launch {
             markerDao.updateMarker(marker)
+            _selectedMarker.value = markerDao.getMarkerById(marker.id) // Re-fetch from DB
         }
-        _selectedMarker.value = marker
     }
 }
