@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
@@ -61,13 +62,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.Random
+import com.bumptech.glide.Glide
 
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun MapsScreen(
     modifier: Modifier = Modifier,
-    mapViewModel: MapViewModel = hiltViewModel()
+    mapViewModel: MapViewModel = hiltViewModel(),
+    navController: NavController,
+    markerViewModel: MarkerViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
 
@@ -100,47 +104,7 @@ fun MapsScreen(
     var geocodeText by rememberSaveable { mutableStateOf("") }
 
     // Permission handling
-
     Column {
-        // Permission and location updates
-        val fineLocationPermissionState = rememberPermissionState(Manifest.permission.ACCESS_FINE_LOCATION)
-        if (fineLocationPermissionState.status.isGranted) {
-            Column {
-                Button(onClick = { mapViewModel.startLocationMonitoring() }) {
-                    Text(text = "Start location monitoring")
-                }
-//                Text(
-//                    text = "Location: " +
-//                            "${getLocationText(mapViewModel.locationState.value)}"
-//                )
-
-            }
-        } else {
-            Column {
-                val permissionText = if (fineLocationPermissionState.status.shouldShowRationale) {
-                    "Please consider giving permission"
-                } else {
-                    "Give permission for location"
-                }
-                Text(text = permissionText)
-                Button(onClick = { fineLocationPermissionState.launchPermissionRequest() }) {
-                    Text(text = "Request permission")
-                }
-            }
-        }
-
-        // Map toggle (Satellite/Normal)
-        var isSatellite by remember { mutableStateOf(false) }
-        Switch(
-            checked = isSatellite,
-            onCheckedChange = {
-                isSatellite = it
-                mapProperties.value = mapProperties.value.copy(
-                    mapType = if (isSatellite) MapType.SATELLITE else MapType.NORMAL
-                )
-            }
-        )
-        Text(text = geocodeText)
 
         // Google Map with native MapView
         AndroidView(
@@ -155,7 +119,7 @@ fun MapsScreen(
                     googleMap.uiSettings.isZoomControlsEnabled = true
 
                     // Custom info window
-                    setupMarkersWithCustomInfoWindow(context, googleMap, mapViewModel)
+                    setupMarkersWithCustomInfoWindow(context, googleMap, mapViewModel,navController,markerViewModel )
 
                     // Map long-click events
                     googleMap.setOnMapLongClickListener { latLng ->
@@ -179,9 +143,8 @@ fun MapsScreen(
                             longitude = markerOptions.position.longitude,
                             title = markerOptions.title ?: "No Title",
                             snippet = markerOptions.snippet ?: "No Snippet",
-                            imageUrl = "drawable/clothes" // Replace with your image URL or file path
+                            imageUrls = listOf("android.resource://${context.packageName}/drawable/clothes") // Replace with your image URLs or file paths
                         )
-
                         CoroutineScope(Dispatchers.IO).launch {
                             MarkerDatabase.getDatabase(context).markerDao().insertMarker(markerEntity)
                         }
@@ -197,7 +160,13 @@ fun MapsScreen(
 }
 
 
-fun setupMarkersWithCustomInfoWindow(context: Context, googleMap: GoogleMap, mapViewModel: MapViewModel) {
+fun setupMarkersWithCustomInfoWindow(
+    context: Context,
+    googleMap: GoogleMap,
+    mapViewModel: MapViewModel,
+    navController: NavController,
+    markerViewModel:MarkerViewModel
+) {
     // Initialize the database
     val markerDatabase = MarkerDatabase.getDatabase(context)
 
@@ -205,17 +174,18 @@ fun setupMarkersWithCustomInfoWindow(context: Context, googleMap: GoogleMap, map
     googleMap.setInfoWindowAdapter(CustomInfoWindowAdapter(context))
 
     // Function to save marker to the database
-    fun saveMarkerToDatabase(markerOptions: MarkerOptions) {
+    fun saveMarkerToDatabase(markerOptions: MarkerOptions, imageUrls: List<String>): MarkerEntity {
         val markerEntity = MarkerEntity(
             latitude = markerOptions.position.latitude,
             longitude = markerOptions.position.longitude,
             title = markerOptions.title ?: "No Title",
             snippet = markerOptions.snippet ?: "No Snippet",
-            imageUrl = "drawable/clothes" // Replace with a default image URL or file path
+            imageUrls = imageUrls // Save image URLs
         )
         CoroutineScope(Dispatchers.IO).launch {
             markerDatabase.markerDao().insertMarker(markerEntity)
         }
+        return markerEntity // Return the entity for immediate use
     }
 
     // Function to load markers from the database
@@ -232,7 +202,10 @@ fun setupMarkersWithCustomInfoWindow(context: Context, googleMap: GoogleMap, map
                         .position(LatLng(markerEntity.latitude, markerEntity.longitude))
                         .title(markerEntity.title)
                         .snippet(markerEntity.snippet)
-                    googleMap.addMarker(markerOptions)
+                    val marker = googleMap.addMarker(markerOptions)
+
+                    // Attach imageUrls to the marker's tag for later use
+                    marker?.tag = markerEntity.imageUrls
                 }
             }
         }
@@ -246,8 +219,13 @@ fun setupMarkersWithCustomInfoWindow(context: Context, googleMap: GoogleMap, map
         .position(LatLng(47.0, 19.0))
         .title("Marker AIT")
         .snippet("Marker with an image")
+    val defaultImageUrls = listOf(
+        "android.resource://${context.packageName}/drawable/clothes",
+        "android.resource://${context.packageName}/drawable/clothes"
+    ) // Example image URLs
     val defaultMarker = googleMap.addMarker(defaultMarkerOptions)
-    //saveMarkerToDatabase(defaultMarkerOptions)
+    defaultMarker?.tag = defaultImageUrls // Set the tag immediately
+    saveMarkerToDatabase(defaultMarkerOptions, defaultImageUrls)
 
     // Add markers from ViewModel and save them to the database
     mapViewModel.getMarkersList().forEach { position ->
@@ -255,30 +233,44 @@ fun setupMarkersWithCustomInfoWindow(context: Context, googleMap: GoogleMap, map
             .position(position)
             .title("Dynamic Marker")
             .snippet("Dynamic marker info")
-        googleMap.addMarker(dynamicMarkerOptions)
-        //saveMarkerToDatabase(dynamicMarkerOptions)
+        val dynamicImageUrls =
+            listOf("android.resource://${context.packageName}/drawable/clothes") // Example image URL
+        val dynamicMarker = googleMap.addMarker(dynamicMarkerOptions)
+        dynamicMarker?.tag = dynamicImageUrls // Set the tag immediately
+        saveMarkerToDatabase(dynamicMarkerOptions, dynamicImageUrls)
     }
 
-    // Handle marker clicks
     googleMap.setOnMarkerClickListener { marker ->
-        // Show the marker's info window
         marker.showInfoWindow()
 
-        // Open BottomSheetDialog
+        // Safely cast the tag to the expected type
+        val markerData = marker.tag as? List<String>
+        if (markerData == null) {
+            Log.e("MarkerError", "Marker tag is null or not of the expected type.")
+            return@setOnMarkerClickListener true
+        }
+
         val bottomSheetDialog = BottomSheetDialog(context)
         val bottomSheetView = LayoutInflater.from(context).inflate(R.layout.marker_bottom_sheet, null)
         bottomSheetDialog.setContentView(bottomSheetView)
 
-        // Access views in the bottom sheet
+        // Assuming the tag is a list of image URLs
         bottomSheetView.findViewById<TextView>(R.id.marker_title).text = marker.title
         bottomSheetView.findViewById<TextView>(R.id.marker_snippet).text = marker.snippet
 
         val imageView = bottomSheetView.findViewById<ImageView>(R.id.marker_image)
-        // Load image (example with a placeholder image)
-        imageView.setImageResource(R.drawable.clothes) // Replace with your drawable
+        if (markerData.isNotEmpty()) {
+            Glide.with(context)
+                .load(markerData[0])
+                .placeholder(R.drawable.img)
+                .error(R.drawable.bracket)
+                .into(imageView)
+        } else {
+            imageView.setImageResource(R.drawable.bracket)
+        }
 
         bottomSheetView.findViewById<Button>(R.id.marker_details_button).setOnClickListener {
-            MainNavigation.SummaryScreen.route
+            navController.navigate(MainNavigation.DetailsScreenContent.route)
             bottomSheetDialog.dismiss()
         }
 
@@ -286,19 +278,12 @@ fun setupMarkersWithCustomInfoWindow(context: Context, googleMap: GoogleMap, map
             bottomSheetDialog.dismiss()
         }
 
-        bottomSheetView.layoutParams?.height = (context.resources.displayMetrics.heightPixels * 0.60).toInt() // 60% of screen height
-
-        // Dismiss the info window when the bottom sheet is dismissed
-        bottomSheetDialog.setOnDismissListener {
-            marker.hideInfoWindow()
-        }
-
-        // Optional: Remove background dimming
-        bottomSheetDialog.window?.setDimAmount(0f)
         bottomSheetDialog.show()
-        true // Return true to consume the event
+        true
     }
+
 }
+
 
 
 

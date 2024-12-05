@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.splashscreen.SplashScreen
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -30,15 +31,16 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import dagger.hilt.android.AndroidEntryPoint
 import com.daniellumbu.thetraveljournal.navigation.MainNavigation
-import com.daniellumbu.thetraveljournal.ui.screen.SummaryScreen
+import com.daniellumbu.thetraveljournal.ui.screen.DetailsScreenContent
 import com.daniellumbu.thetraveljournal.ui.screen.TodoListScreen
 import com.daniellumbu.thetraveljournal.ui.theme.TheTravelJournalTheme
 import kotlinx.coroutines.delay
 import com.daniellumbu.thetraveljournal.ui.screen.map.MapsScreen
+import com.daniellumbu.thetraveljournal.ui.screen.map.MarkerViewModel
 
 
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity() : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,12 +76,13 @@ fun TodoAppNavHost(
 
         // Maps Screen
         composable(MainNavigation.MapsScreen.route) {
-            MapsScreen() // Replace TodoListScreen with MapsScreen
+            MapsScreen(navController = navController)
         }
 
         // Summary Screen
-        composable(MainNavigation.SummaryScreen.route) {
-            SummaryScreen()
+        composable(MainNavigation.DetailsScreenContent.route) {
+            val markerViewModel: MarkerViewModel = hiltViewModel() // or pass it explicitly
+            DetailsScreenContent(markerViewModel = markerViewModel)
         }
     }
 }

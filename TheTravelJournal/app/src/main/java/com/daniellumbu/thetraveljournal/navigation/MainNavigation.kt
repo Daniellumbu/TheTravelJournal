@@ -6,12 +6,9 @@ sealed class MainNavigation(val route: String) {
 
     object MapsScreen: MainNavigation("maps_screen")
 
+    object TodoListScreen: MainNavigation("TodoList_screen")
 
-    object SummaryScreen : MainNavigation(
-        "summaryscreen?all={all}&important={important}") {
-        fun createRoute(all: Int, important: Int) : String {
-            return "summaryscreen?all=$all&important=$important"
-        }
-    }
+    object DetailsScreenContent : MainNavigation( "DetailScreenContent"
+        )
 
 }

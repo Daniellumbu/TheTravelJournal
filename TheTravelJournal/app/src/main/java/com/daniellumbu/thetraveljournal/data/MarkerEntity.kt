@@ -10,5 +10,5 @@ data class MarkerEntity(
     val longitude: Double,
     val title: String,
     val snippet: String,
-    val imageUrl: String // Store image as URL or file path
+    val imageUrls: List<String> = mutableListOf() // Use List<String> for multiple images
 )

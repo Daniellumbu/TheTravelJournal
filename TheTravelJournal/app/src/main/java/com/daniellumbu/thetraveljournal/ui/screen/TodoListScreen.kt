@@ -78,8 +78,7 @@ import kotlin.math.exp
 @Composable
 fun TodoListScreen(
     modifier: Modifier = Modifier,
-    viewModel: TodoViewModel = hiltViewModel(),
-    onNavigateToSummary: (Int, Int) -> Unit
+    viewModel: TodoViewModel = hiltViewModel()
 ) {
     val coroutineScope = rememberCoroutineScope()
     val todoLists by viewModel.getAllToDoList().collectAsState(initial = emptyList())

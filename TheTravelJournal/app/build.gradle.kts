@@ -55,7 +55,12 @@ android {
 }
 
 dependencies {
-
+    implementation(libs.gson)
+    implementation(libs.coil.compose)
+    implementation (libs.glide)
+    // Accompanist libraries for pager and indicators
+    implementation(libs.accompanist.pager)
+    implementation(libs.accompanist.pager.indicators)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -68,6 +73,7 @@ dependencies {
     implementation(libs.play.services.location)
     implementation(libs.play.services.maps)
     implementation(libs.material)
+    implementation(libs.firebase.crashlytics.buildtools)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -108,5 +114,7 @@ dependencies {
     implementation(libs.play.services.location)
     // Permission handling
     implementation(libs.accompanist)
+
+
 
 }
