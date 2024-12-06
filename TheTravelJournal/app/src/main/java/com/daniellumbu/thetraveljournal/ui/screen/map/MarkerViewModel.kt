@@ -1,5 +1,6 @@
 package com.daniellumbu.thetraveljournal.ui.screen.map
 
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -50,4 +51,19 @@ class MarkerViewModel @Inject constructor(
             _selectedMarker.value = markerDao.getMarkerById(marker.id) // Re-fetch from DB
         }
     }
+
+    fun deleteImageFromMarker(imageUri: Uri) {
+        _selectedMarker.value?.let { marker ->
+            val updatedImageUrls = marker.imageUrls.filterNot { it == imageUri.toString() } // Remove image
+            val updatedMarker = marker.copy(imageUrls = updatedImageUrls)
+
+            viewModelScope.launch {
+                markerDao.updateMarker(updatedMarker) // Update in the database
+                _selectedMarker.value = updatedMarker // Update the in-memory data
+            }
+        }
+    }
+
+
+
 }

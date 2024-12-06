@@ -1,6 +1,7 @@
 package com.daniellumbu.thetraveljournal.data
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
@@ -29,6 +30,9 @@ interface MarkerDAO {
 
     @Update
     suspend fun updateMarker(marker: MarkerEntity)
+
+    @Delete
+    suspend fun deleteMarker(marker: MarkerEntity)
 
 }
 

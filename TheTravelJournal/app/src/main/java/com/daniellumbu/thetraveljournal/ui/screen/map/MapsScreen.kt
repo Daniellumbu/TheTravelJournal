@@ -18,6 +18,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -123,18 +124,17 @@ fun MapsScreen(
 
                     // Map long-click events
                     googleMap.setOnMapLongClickListener { latLng ->
-                        // Geocode to get location name for the marker title
                         val geocoder = Geocoder(context, Locale.getDefault())
                         val locationName = geocoder.getFromLocation(latLng.latitude, latLng.longitude, 1)
                             ?.firstOrNull()
                             ?.countryName
                             ?: "Unknown Location"
-
+                        val address = geocoder.getFromLocation(latLng.latitude, latLng.longitude, 1)?.firstOrNull()
+                        val city = address?.locality ?: address?.subLocality ?: "Unknown City"
                         val markerOptions = MarkerOptions()
                             .position(latLng)
-                            .title(locationName) // Now it will show only the country name
-                            .snippet("Dynamic marker with image") // Add any other relevant information
-                             // Use the same image as Marker AIT
+                            .title(locationName)
+                            .snippet(city)
 
                         googleMap.addMarker(markerOptions)
 
@@ -142,16 +142,19 @@ fun MapsScreen(
                             latitude = markerOptions.position.latitude,
                             longitude = markerOptions.position.longitude,
                             title = markerOptions.title ?: "No Title",
-                            snippet = markerOptions.snippet ?: "No Snippet",
-                            imageUrls = listOf("android.resource://${context.packageName}/drawable/clothes") // Replace with your image URLs or file paths
+                            snippet = markerOptions.snippet ?: "UnKnown City",
+                            imageUrls = listOf("android.resource://${context.packageName}/drawable/clothes")
                         )
                         CoroutineScope(Dispatchers.IO).launch {
                             MarkerDatabase.getDatabase(context).markerDao().insertMarker(markerEntity)
+                            withContext(Dispatchers.Main) {
+                                loadMarkersFromDatabase(context, googleMap) // Refresh markers
+                            }
                         }
 
-                        // Optionally, animate camera to the new marker
                         googleMap.animateCamera(CameraUpdateFactory.newLatLng(latLng))
                     }
+
                 }
                 mapView
             }
@@ -159,6 +162,28 @@ fun MapsScreen(
     }
 }
 
+// Load saved markers from the database
+fun loadMarkersFromDatabase(context: Context, googleMap: GoogleMap) {
+    val markerDatabase = MarkerDatabase.getDatabase(context)
+    CoroutineScope(Dispatchers.IO).launch {
+        val savedMarkers = markerDatabase.markerDao().getAllMarkers()
+        Log.d("YourTag", "Saved Markers: $savedMarkers")
+        if (savedMarkers.isEmpty()) {
+            Log.e("MarkerError", "No markers found in the database.")
+        }
+        withContext(Dispatchers.Main) {
+            googleMap.clear() // Clear existing markers to prevent duplication
+            for (markerEntity in savedMarkers) {
+                val markerOptions = MarkerOptions()
+                    .position(LatLng(markerEntity.latitude, markerEntity.longitude))
+                    .title(markerEntity.title)
+                    .snippet(markerEntity.snippet)
+                val marker = googleMap.addMarker(markerOptions)
+                marker?.tag = markerEntity
+            }
+        }
+    }
+}
 
 fun setupMarkersWithCustomInfoWindow(
     context: Context,
@@ -170,36 +195,11 @@ fun setupMarkersWithCustomInfoWindow(
     // Initialize the database
     val markerDatabase = MarkerDatabase.getDatabase(context)
 
-    // Load saved markers from the database
-    fun loadMarkersFromDatabase() {
-        CoroutineScope(Dispatchers.IO).launch {
-            val savedMarkers = markerDatabase.markerDao().getAllMarkers()
-            Log.d("YourTag", "Saved Markers: $savedMarkers")
-            if (savedMarkers.isEmpty()) {
-                Log.e("MarkerError", "No markers found in the database.")
-            }
-            withContext(Dispatchers.Main) {
-                for (markerEntity in savedMarkers) {
-                    val markerOptions = MarkerOptions()
-                        .position(LatLng(markerEntity.latitude, markerEntity.longitude))
-                        .title(markerEntity.title)
-                        .snippet(markerEntity.snippet)
-                    val marker = googleMap.addMarker(markerOptions)
-
-                    // Attach imageUrls to the marker's tag for later use
-                    marker?.tag = markerEntity
-                }
-            }
-        }
-    }
 
     // Load markers initially
-    loadMarkersFromDatabase()
+    loadMarkersFromDatabase(context, googleMap)
 
     googleMap.setOnMarkerClickListener { marker ->
-        marker.showInfoWindow()
-
-        // Safely cast the tag to the expected type
         val markerEntity = marker.tag as? MarkerEntity
         if (markerEntity == null) {
             Log.e("MarkerError", "Marker tag is null or not of the expected type.")
@@ -207,17 +207,23 @@ fun setupMarkersWithCustomInfoWindow(
         }
 
         val bottomSheetDialog = BottomSheetDialog(context)
-        val bottomSheetView = LayoutInflater.from(context).inflate(R.layout.marker_bottom_sheet, null)
+        val bottomSheetView =
+            LayoutInflater.from(context).inflate(R.layout.marker_bottom_sheet, null)
         bottomSheetDialog.setContentView(bottomSheetView)
 
-        // Populate bottom sheet views with marker details
         bottomSheetView.findViewById<TextView>(R.id.marker_title).text = markerEntity.title
         bottomSheetView.findViewById<TextView>(R.id.marker_snippet).text = markerEntity.snippet
+
+        val imageUrl = when {
+            markerEntity.imageUrls.size > 1 -> markerEntity.imageUrls[1]
+            markerEntity.imageUrls.isNotEmpty() -> markerEntity.imageUrls[0]
+            else -> null
+        }
 
         val imageView = bottomSheetView.findViewById<ImageView>(R.id.marker_image)
         if (markerEntity.imageUrls.isNotEmpty()) {
             Glide.with(context)
-                .load(markerEntity.imageUrls[0])
+                .load(imageUrl)
                 .placeholder(R.drawable.img)
                 .error(R.drawable.bracket)
                 .into(imageView)
@@ -225,26 +231,36 @@ fun setupMarkersWithCustomInfoWindow(
             imageView.setImageResource(R.drawable.bracket)
         }
 
-        // Set the "Details" button logic
+        // Details button
         bottomSheetView.findViewById<Button>(R.id.marker_details_button).setOnClickListener {
-            // Update the selected marker in ViewModel
             markerViewModel.selectMarker(markerEntity)
-
-            // Navigate to the details screen, passing the marker ID
             navController.navigate("DetailScreenContent/${markerEntity.id}")
             bottomSheetDialog.dismiss()
         }
 
+        // Close button
         bottomSheetView.findViewById<Button>(R.id.marker_close_button).setOnClickListener {
             bottomSheetDialog.dismiss()
         }
 
+        // Delete button
+        bottomSheetView.findViewById<Button>(R.id.marker_delete_button).setOnClickListener {
+            // Remove marker from the map
+            marker.remove()
+
+            // Delete marker from the database
+            CoroutineScope(Dispatchers.IO).launch {
+                MarkerDatabase.getDatabase(context).markerDao().deleteMarker(markerEntity)
+                withContext(Dispatchers.Main) {
+                    bottomSheetDialog.dismiss()
+                }
+            }
+        }
+
+        bottomSheetDialog.window?.setDimAmount(0f)
+        bottomSheetView.layoutParams?.height =
+            (context.resources.displayMetrics.heightPixels * 0.60).toInt()
         bottomSheetDialog.show()
         true
     }
 }
-
-
-
-
-

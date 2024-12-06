@@ -1,4 +1,5 @@
 package com.daniellumbu.thetraveljournal.ui.screen
+import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
@@ -15,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Text
@@ -23,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -30,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.rememberAsyncImagePainter
 import com.daniellumbu.thetraveljournal.ui.screen.map.MarkerViewModel
 import com.google.accompanist.pager.*
+import java.io.File
 
 
 class DetailsScreen : ComponentActivity() {
@@ -53,18 +57,16 @@ class DetailsScreen : ComponentActivity() {
 @OptIn(ExperimentalPagerApi::class)
 @Composable
 fun DetailsScreenContent(
-    markerViewModel: MarkerViewModel, // Pass the ViewModel as a parameter
+    markerViewModel: MarkerViewModel,
     markerId: Int
 ) {
+    val context = LocalContext.current
     LaunchedEffect(markerId) {
         markerViewModel.loadMarker(markerId)
     }
 
-    // Observe the selected marker from the ViewModel
     val selectedMarker by markerViewModel.selectedMarker.collectAsState()
 
-
-    // State to manage photos and actions
     var photos by remember { mutableStateOf(listOf<Uri>()) }
     var showFullScreen by remember { mutableStateOf(false) }
     var currentPhotoIndex by remember { mutableStateOf(0) }
@@ -74,12 +76,16 @@ fun DetailsScreenContent(
         contract = ActivityResultContracts.GetContent(),
         onResult = { uri ->
             uri?.let { newUri ->
-                val updatedMarker = selectedMarker?.copy(
-                    imageUrls = selectedMarker!!.imageUrls + newUri.toString() // Add new image URL
-                )
-                updatedMarker?.let {
-                    markerViewModel.updateMarker(it) // Save updated marker through ViewModel
-                    photos = updatedMarker.imageUrls.map { Uri.parse(it) } // Update photos state
+                val savedFileUri = saveUriToInternalStorage(context, newUri)
+
+                savedFileUri?.let { fileUri ->
+                    val updatedMarker = selectedMarker?.copy(
+                        imageUrls = selectedMarker!!.imageUrls + fileUri.toString()
+                    )
+                    updatedMarker?.let {
+                        markerViewModel.updateMarker(it)
+                        photos = updatedMarker.imageUrls.map { Uri.parse(it) }
+                    }
                 }
             }
         }
@@ -87,73 +93,112 @@ fun DetailsScreenContent(
 
     // Load the photos when selected marker changes
     LaunchedEffect(selectedMarker) {
-        photos = selectedMarker?.imageUrls?.map { Uri.parse(it) } ?: emptyList() // Map image URLs to URIs
+        photos = selectedMarker?.imageUrls?.mapNotNull { imageUrl ->
+            val file = File(Uri.parse(imageUrl).path ?: "")
+            if (file.exists()) Uri.fromFile(file) else null
+        } ?: emptyList()
     }
 
     if (showFullScreen) {
-        // Fullscreen Photo Viewer
         FullScreenPhotoViewer(
             photos = photos,
             initialPage = currentPhotoIndex,
-            onDismiss = { showFullScreen = false }
+            onDismiss = { showFullScreen = false },
+            onDelete = { uri ->
+                markerViewModel.deleteImageFromMarker(uri) // Handle image deletion
+                photos = photos.filterNot { it == uri } // Remove photo from list
+            }
         )
     } else {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(16.dp),
+            contentAlignment = Alignment.TopCenter // Align the content at the top-center
         ) {
-            Log.d("DetailsScreen", "Selected Marker: $selectedMarker")
-            Text(
-                text = selectedMarker?.title ?: "Loading...",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            Text(
-                text = selectedMarker?.snippet ?: "",
-                fontSize = 16.sp,
-                color = Color.Gray,
-                textAlign = TextAlign.Justify,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-
-            // Button to add photo
-            Button(
-                onClick = { pickImageLauncher.launch("image/*") },
-                modifier = Modifier.fillMaxWidth()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter) // Make sure the column is centered
             ) {
-                Text(text = "Add Photo")
-            }
+                // Add Spacer to adjust vertical position
+                Spacer(modifier = Modifier.height(50.dp)) // Adjust as needed to push content lower
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = selectedMarker?.title ?: "Loading...",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center, // Center the title
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                )
 
-            // LazyColumn to display photos
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(photos.size) { index ->
-                    Card(
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                currentPhotoIndex = index
-                                showFullScreen = true
-                            }
-                    ) {
-                        Image(
-                            painter = rememberAsyncImagePainter(photos[index]),
-                            contentDescription = "Photo $index",
+                Text(
+                    text = selectedMarker?.snippet ?: "",
+                    fontSize = 16.sp,
+                    color = Color.Gray,
+                    textAlign = TextAlign.Center, // Center the snippet
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                )
+
+                Button(
+                    onClick = { pickImageLauncher.launch("image/*") },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(text = "Add Photo")
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(photos.size) { index ->
+                        Card(
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(200.dp),
-                            contentScale = ContentScale.Crop
-                        )
+                                .clickable {
+                                    currentPhotoIndex = index
+                                    showFullScreen = true
+                                }
+                        ) {
+                            Image(
+                                painter = rememberAsyncImagePainter(photos[index]),
+                                contentDescription = "Photo $index",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+
+fun saveUriToInternalStorage(context: Context, uri: Uri): Uri? {
+    return try {
+        val inputStream = context.contentResolver.openInputStream(uri)
+        val fileName = "${System.currentTimeMillis()}.jpg"
+        val file = File(context.filesDir, fileName)
+
+        inputStream?.use { input ->
+            file.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
+
+        Uri.fromFile(file)
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
     }
 }
 
@@ -163,9 +208,11 @@ fun DetailsScreenContent(
 fun FullScreenPhotoViewer(
     photos: List<Uri>,
     initialPage: Int,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onDelete: (Uri) -> Unit // Add delete callback
 ) {
     val pagerState = rememberPagerState(initialPage)
+    Log.d("Marker Tag", "The initial int: $initialPage")
 
     Box(modifier = Modifier.fillMaxSize()) {
         HorizontalPager(
@@ -180,19 +227,47 @@ fun FullScreenPhotoViewer(
                 contentScale = ContentScale.Fit
             )
         }
+
         HorizontalPagerIndicator(
             pagerState = pagerState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(16.dp)
         )
+
+        // Delete button - Adjusted closer to top
+        IconButton(
+            onClick = {
+                val photoToDelete = photos[pagerState.currentPage]
+                onDelete(photoToDelete) // Call delete action
+                onDismiss() // Close the full-screen viewer after deletion
+            },
+            modifier = Modifier
+                .align(Alignment.TopEnd) // Align the button closer to the top-right corner
+                .padding(35.dp) // Increase padding to move it a bit lower
+                .size(90.dp) // Make the button larger
+        ) {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = "Delete Photo",
+                tint = Color.Red// Set the color to blue
+            )
+        }
+
+        // Close button - Adjusted closer to top
         IconButton(
             onClick = onDismiss,
             modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp)
+                .align(Alignment.TopStart) // Align the button closer to the top-left corner
+                .padding(35.dp) // Increase padding for more spacing
+                .size(90.dp) // Make the button larger
         ) {
-            Icon(imageVector = Icons.Default.Close, contentDescription = "Close")
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Close",
+                tint = Color.Blue // Set the color to blue
+            )
         }
     }
 }
+
